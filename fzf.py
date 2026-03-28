@@ -1,7 +1,8 @@
 """fzf wrapper for theme selection with live preview."""
 
-import subprocess
-import sys
+import os
+import shlex
+import tempfile
 
 
 def run_fzf(
@@ -16,14 +17,9 @@ def run_fzf(
 ) -> str | None:
     """Run fzf and return the selected item, or None if cancelled.
 
-    Args:
-        items: List of items to select from.
-        header: Header text shown at top of fzf.
-        preview_cmd: Command to run for preview pane ({} is replaced with item).
-        focus_cmd: Command to run on each cursor movement (live preview).
-        abort_cmd: Command to run when user presses Esc (revert).
-        prompt: The fzf prompt string.
-        current: If set, pre-select this item.
+    fzf needs the TTY for its interactive UI (keyboard input, screen drawing).
+    We pipe items via a temp file and capture the selection via another temp file,
+    letting fzf inherit stdio directly for full terminal access.
     """
     cmd = [
         "fzf",
@@ -45,27 +41,33 @@ def run_fzf(
     if focus_cmd:
         binds.append(f"focus:execute-silent({focus_cmd})")
     if abort_cmd:
-        # Run abort command, then abort fzf
         binds.append(f"esc:execute-silent({abort_cmd})+abort")
 
     if binds:
         cmd.extend(["--bind", ",".join(binds)])
 
-    # If we have a current value, try to position on it
-    if current and current in items:
-        # Move current item to be initially selected by reordering
-        # (fzf doesn't have a --select flag, but we can use --query or reorder)
-        pass  # fzf will just start at top, which is fine
+    # Write items to a temp file, pipe it into fzf via shell so fzf's
+    # stdin/stdout/stderr are connected to the real terminal.
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as items_f:
+        items_f.write("\n".join(items))
+        items_path = items_f.name
 
-    input_text = "\n".join(items)
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as out_f:
+        out_path = out_f.name
 
-    result = subprocess.run(
-        cmd,
-        input=input_text,
-        capture_output=True,
-        text=True,
-    )
+    try:
+        # Build a shell command: cat items | fzf ... > output
+        fzf_args = " ".join(shlex.quote(c) for c in cmd)
+        shell_cmd = f"cat {shlex.quote(items_path)} | {fzf_args} > {shlex.quote(out_path)}"
 
-    if result.returncode == 0 and result.stdout.strip():
-        return result.stdout.strip()
-    return None
+        returncode = os.system(shell_cmd)
+
+        if returncode == 0:
+            selection = open(out_path).read().strip()
+            return selection if selection else None
+        return None
+    finally:
+        os.unlink(items_path)
+        os.unlink(out_path)
+
+
