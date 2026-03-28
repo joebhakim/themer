@@ -1,0 +1,91 @@
+# themer configuration
+#
+# This file defines which adapters are active, theme profiles,
+# and per-adapter settings.
+#
+# Location: ~/.config/themer/config.toml
+
+# Which adapters to use. Remove any you don't have installed.
+# Order determines the apply sequence.
+active_adapters = ["kde", "kitty", "fish", "neovim", "cursor"]
+
+
+# --- Profiles ---
+#
+# Each profile maps adapter names to theme names.
+# Not every adapter needs an entry -- missing ones are skipped.
+# Theme names must match what the application expects:
+#   kde:    plasma-apply-colorscheme --list-schemes
+#   kitty:  names from the kitty themes repository
+#   fish:   fish_config theme list
+#   neovim: installed colorscheme names
+#   cursor: installed VS Code/Cursor theme names
+
+[profiles.whitesur-dark]
+kde = "WhiteSurDark"
+kitty = "Obsidian"
+fish = "dracula"
+neovim = "tokyonight-night"
+cursor = "Default Dark+"
+
+[profiles.breeze-light]
+kde = "BreezeLight"
+kitty = "Alabaster"
+fish = "snow-day"
+neovim = "tokyonight-day"
+cursor = "Default Light Modern"
+
+[profiles.nord]
+kde = "BreezeDark"
+kitty = "Nord"
+fish = "nord"
+neovim = "tokyonight-storm"
+cursor = "Default Dark+"
+
+[profiles.dracula]
+kde = "BreezeDark"
+kitty = "Dracula"
+fish = "dracula"
+neovim = "tokyonight-night"
+cursor = "Default Dark+"
+
+[profiles.catppuccin]
+kde = "WhiteSurDark"                # or install a catppuccin KDE scheme
+kitty = "Catppuccin-Mocha"
+fish = "catppuccin-mocha"
+neovim = "tokyonight-moon"          # or install catppuccin.nvim
+cursor = "Default Dark+"
+
+
+# --- Adapter settings ---
+
+[adapters.kitty]
+# Curated list of kitty themes for the interactive browser.
+# Kitty themes are downloaded on-demand from GitHub by the kitten.
+# Add or remove names as you like.
+known_themes = [
+    "Obsidian", "Dracula", "Nord",
+    "Catppuccin-Mocha", "Catppuccin-Latte", "Catppuccin-Frappe", "Catppuccin-Macchiato",
+    "Gruvbox Dark", "Gruvbox Light",
+    "Solarized Dark", "Solarized Light",
+    "Tokyo Night", "Tokyo Night Storm",
+    "One Half Dark", "One Half Light",
+    "Rosé Pine", "Rosé Pine Moon", "Rosé Pine Dawn",
+    "Alabaster",
+    "GitHub Dark", "GitHub Light",
+]
+
+[adapters.neovim]
+# Path to the file containing vim.cmd.colorscheme
+config_path = "/home/you/.config/nvim/lua/kickstart/plugins/tokyonight.lua"
+# Regex pattern to find the colorscheme line (capture group 1 = theme name)
+colorscheme_pattern = "vim\\.cmd\\.colorscheme '([^']+)'"
+
+[adapters.cursor]
+# Path to Cursor (or VS Code) settings.json
+settings_path = "/home/you/.config/Cursor/User/settings.json"
+# Themes that are installed and available in Cursor/VS Code
+known_themes = [
+    "Default Dark+", "Default Dark Modern", "Default Light Modern",
+    "Default Light+", "Quiet Light", "Default High Contrast",
+]
