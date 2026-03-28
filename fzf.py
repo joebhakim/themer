@@ -2,6 +2,7 @@
 
 import os
 import shlex
+import subprocess
 import tempfile
 
 
@@ -17,9 +18,10 @@ def run_fzf(
 ) -> str | None:
     """Run fzf and return the selected item, or None if cancelled.
 
-    fzf needs the TTY for its interactive UI (keyboard input, screen drawing).
-    We pipe items via a temp file and capture the selection via another temp file,
-    letting fzf inherit stdio directly for full terminal access.
+    fzf needs /dev/tty for keyboard input and screen drawing. We pass items
+    via a temp file (shell < redirect) and capture the selection via another
+    temp file (shell > redirect). fzf's own stdin/stderr go to /dev/tty
+    for the interactive UI.
     """
     cmd = [
         "fzf",
@@ -46,28 +48,31 @@ def run_fzf(
     if binds:
         cmd.extend(["--bind", ",".join(binds)])
 
-    # Write items to a temp file, pipe it into fzf via shell so fzf's
-    # stdin/stdout/stderr are connected to the real terminal.
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as items_f:
-        items_f.write("\n".join(items))
-        items_path = items_f.name
+    # Write items to temp file
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".list", delete=False) as f:
+        f.write("\n".join(items) + "\n")
+        items_path = f.name
 
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as out_f:
-        out_path = out_f.name
+    out_fd, out_path = tempfile.mkstemp(suffix=".selection")
+    os.close(out_fd)
 
     try:
-        # Build a shell command: cat items | fzf ... > output
+        # Shell command: fzf reads items from file, writes selection to file,
+        # and gets /dev/tty for its interactive UI automatically (fzf opens
+        # /dev/tty itself when stdin is not a terminal).
         fzf_args = " ".join(shlex.quote(c) for c in cmd)
-        shell_cmd = f"cat {shlex.quote(items_path)} | {fzf_args} > {shlex.quote(out_path)}"
+        shell_cmd = f"{fzf_args} < {shlex.quote(items_path)} > {shlex.quote(out_path)}"
 
-        returncode = os.system(shell_cmd)
+        returncode = subprocess.call(shell_cmd, shell=True)
 
         if returncode == 0:
-            selection = open(out_path).read().strip()
+            with open(out_path) as f:
+                selection = f.read().strip()
             return selection if selection else None
         return None
     finally:
-        os.unlink(items_path)
-        os.unlink(out_path)
-
-
+        for p in (items_path, out_path):
+            try:
+                os.unlink(p)
+            except OSError:
+                pass
