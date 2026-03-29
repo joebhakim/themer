@@ -1,223 +1,101 @@
 # themer
 
-Centralized theme manager for Linux desktops. Switch color themes across KDE Plasma, kitty, fish shell, Neovim, and Cursor/VS Code in one command -- with live preview as you browse.
-
-## How it works
-
-`themer` uses an adapter pattern: each application (KDE, kitty, fish, etc.) has an adapter that knows how to list, detect, preview, and commit themes using that application's **native** theme infrastructure. No colors are copy-pasted or manually maintained -- themer delegates to `plasma-apply-colorscheme`, `kitty +kitten themes`, `fish_config theme choose`, and so on.
-
-**Profiles** coordinate themes across applications. A profile like "nord" maps to `BreezeDark` in KDE, `Nord` in kitty, `nord` in fish, `tokyonight-storm` in Neovim, and `Default Dark+` in Cursor. Applying a profile switches everything at once.
-
-**Live preview** is the key feature. When browsing profiles or themes interactively, KDE and kitty change in real-time as you move the cursor. Press Escape and everything reverts. Press Enter to commit.
+`themer` is a Linux-first theme orchestrator for KDE Plasma, kitty, fish, Neovim, and Cursor/VS Code. The v2 rewrite replaces the old Python + `fzf` flow with a Go CLI/TUI, a versioned config schema, explicit adapter diagnostics, and safer preview behavior.
 
 ## Requirements
 
-- **Python 3.11+** (uses `tomllib` from stdlib -- no pip packages needed)
-- **fzf** (fuzzy finder, used for the interactive TUI)
-- One or more supported applications:
-  - **KDE Plasma 6** with `plasma-apply-colorscheme` CLI
-  - **kitty** terminal with `allow_remote_control socket-only` and `listen_on` configured (needed for live preview)
-  - **fish** shell 3.4+
-  - **Neovim** (optional)
-  - **Cursor** or VS Code (optional)
+- Go 1.26+ if you run from a source checkout
+- Linux desktop environment with any adapters you enable
+- Supported adapter tools:
+  - KDE: `plasma-apply-colorscheme`
+  - kitty: `kitty` with remote control configured for preview
+  - fish: `fish` and `fish_config`
+  - Neovim: a writable config file containing your colorscheme expression
+  - Cursor/VS Code: writable `settings.json` or JSONC-compatible settings file
 
 ## Installation
 
-1. Clone the repo:
-
 ```bash
 git clone git@github.com:joebhakim/themer.git ~/themer
-```
-
-2. Symlink the entry point into your PATH:
-
-```bash
 ln -sf ~/themer/bin/themer ~/.local/bin/themer
-```
-
-3. Copy the example config:
-
-```bash
 mkdir -p ~/.config/themer
-cp ~/themer/config.example.toml ~/.config/themer/config.toml
+cp ~/themer/config.example.toml ~/.config/themer/themer.toml
 ```
 
-4. Edit `~/.config/themer/config.toml` to match your system (adapter paths, installed themes, etc.)
+For a broader manual-testing config with many more profiles and adapter values, use:
 
-5. **For kitty live preview**, add to your `kitty.conf`:
-
+```bash
+cp ~/themer/config.full.example.toml ~/.config/themer/themer.toml
 ```
+
+For kitty preview, the simplest path is to launch `themer` from inside kitty.
+If you want an explicit remote-control target instead, set a stable socket and
+point `adapters.kitty.socket` at it:
+
+```conf
 allow_remote_control socket-only
-listen_on unix:/tmp/kitty-{kitty_pid}.sock
+listen_on unix:/tmp/kitty-theme-preview.sock
 ```
 
-Then restart kitty.
-
-## Usage
-
-### Interactive mode (recommended)
+## Commands
 
 ```bash
-themer                # browse profiles with live preview
-themer kitty          # browse kitty themes only
-themer kde            # browse KDE color schemes only
-themer fish           # browse fish themes only
+themer                  # open the TUI browser
+themer browse           # same as above
+themer apply nord       # apply a profile
+themer current          # show current themes
+themer current --json   # machine-readable current state
+themer capture desktop  # snapshot current state into a profile
+themer doctor           # validate adapter readiness and preview support
 ```
 
-The interactive modes use fzf. As you move the cursor:
-- **KDE** changes instantly (panel, taskbar, window borders, all Qt apps)
-- **Kitty** terminal colors change instantly (all windows)
-- **Fish** and others show a preview in the fzf side pane
+## Config
 
-Press **Enter** to commit, **Escape** to revert to original.
+The config path is `~/.config/themer/themer.toml`.
 
-### Non-interactive
-
-```bash
-themer apply nord           # switch everything to the "nord" profile
-themer apply breeze-light   # switch to light theme
-```
-
-### Inspect
-
-```bash
-themer current              # show current theme per application
-themer list                 # show all profiles and their theme mappings
-```
-
-### Save
-
-```bash
-themer save my-setup        # snapshot current themes as a new profile
-```
-
-## Configuration
-
-Config lives at `~/.config/themer/config.toml`. See `config.example.toml` for the full reference.
-
-### Active adapters
+- `config.example.toml` is the small starter config.
+- `config.full.example.toml` is a larger test-oriented example with more profiles, more known themes, and comments around path expansion.
+- `adapters.kitty.socket` is optional. When omitted, themer will try to use the current kitty terminal session.
 
 ```toml
-active_adapters = ["kde", "kitty", "fish", "neovim", "cursor"]
+version = 2
+enabled_adapters = ["kde", "kitty", "fish", "neovim", "cursor"]
+
+[ui]
+preview_on_move = true
+preview_debounce_ms = 120
+
+[profiles.nord.targets]
+kde = "BreezeDark"
+kitty = "Nord"
+fish = "nord"
+neovim = "tokyonight-storm"
+cursor = "Default Dark+"
 ```
 
-Only adapters listed here are used. Remove any you don't have installed.
+Key changes in v2:
 
-### Profiles
-
-Each profile maps adapter names to theme names:
-
-```toml
-[profiles.nord]
-kde = "BreezeDark"          # name from: plasma-apply-colorscheme --list-schemes
-kitty = "Nord"              # name from: kitty +kitten themes (GitHub theme repo)
-fish = "nord"               # name from: fish_config theme list
-neovim = "tokyonight-storm" # name from installed colorscheme plugin
-cursor = "Default Dark+"    # name from VS Code/Cursor theme list
-```
-
-Profiles don't need entries for every adapter. Missing entries are skipped.
-
-### Adapter settings
-
-Some adapters need extra config:
-
-```toml
-[adapters.kitty]
-# Kitty themes are fetched from GitHub -- this curated list is used for browsing
-known_themes = ["Dracula", "Nord", "Catppuccin-Mocha", ...]
-
-[adapters.neovim]
-# Path to the Lua file where vim.cmd.colorscheme is called
-config_path = "/home/you/.config/nvim/lua/kickstart/plugins/tokyonight.lua"
-# Regex to find and replace the colorscheme name
-colorscheme_pattern = "vim\\.cmd\\.colorscheme '([^']+)'"
-
-[adapters.cursor]
-# Path to Cursor/VS Code settings.json
-settings_path = "/home/you/.config/Cursor/User/settings.json"
-known_themes = ["Default Dark+", "Default Light Modern", ...]
-```
+- Profiles live under `[profiles.<name>.targets]`.
+- Config is versioned and validated on startup.
+- Preview is explicit per adapter. If `doctor` says an adapter is apply-only, the TUI will not try to fake preview/revert for it.
+- Cursor settings are read as JSONC, so comments and trailing commas no longer crash the tool.
 
 ## Architecture
 
-```
-~/themer/
-    bin/themer                   # entry point (symlinked to ~/.local/bin/themer)
-    main.py                      # CLI dispatch, fzf orchestration
-    config.py                    # TOML config loading, profile model
-    fzf.py                       # fzf subprocess wrapper with live-preview bindings
-    adapters/
-        base.py                  # ThemeAdapter ABC
-        kde.py                   # KDE Plasma via plasma-apply-colorscheme
-        kitty.py                 # kitty via kitten themes + kitty @ set-colors
-        fish.py                  # fish via fish_config theme choose
-        neovim.py                # Neovim via config file regex edit
-        cursor.py                # Cursor/VS Code via settings.json edit
-~/.config/themer/
-    config.toml                  # profiles and adapter settings
+```text
+cmd/themer/        Cobra entrypoint
+internal/cli/      command wiring
+internal/config/   TOML schema, validation, persistence
+internal/core/     adapter contract, preview session manager
+internal/adapters/ built-in adapters for KDE, kitty, fish, Neovim, Cursor
+internal/ui/       Bubble Tea profile browser
 ```
 
-### Adapter interface
+The TUI is the primary interaction model. Non-interactive commands call the same adapter layer as the browser.
 
-Every adapter implements:
+## Migration
 
-| Method | Purpose |
-|--------|---------|
-| `list_themes()` | Return available theme names |
-| `get_current()` | Detect which theme is currently active |
-| `preview(name)` | Temporarily apply a theme (revertible) |
-| `revert()` | Undo the preview, restore original |
-| `commit(name)` | Permanently apply a theme |
-| `describe(name)` | Return text + color swatches for fzf preview pane |
-
-To add support for a new application, create a new adapter file implementing this interface and register it in `adapters/__init__.py`. No other code changes needed.
-
-### How live preview works
-
-The interactive mode launches fzf with event bindings:
-
-```
-fzf --bind 'focus:execute-silent(themer _preview-profile {})'
-    --bind 'esc:execute-silent(themer _revert)+abort'
-    --preview 'themer _describe-profile {}'
-```
-
-- `focus` fires on every cursor movement, calling `themer _preview-profile` which invokes each adapter's `preview()` method
-- `esc` calls `themer _revert` (restores original themes) then closes fzf
-- `--preview` renders the side pane with color swatches and theme details
-
-The preview mechanisms differ by adapter:
-
-| Adapter | Preview | Revert | Commit |
-|---------|---------|--------|--------|
-| KDE | `plasma-apply-colorscheme` (instant, affects all Qt apps) | Apply original scheme name | Same as preview |
-| kitty | `kitty @ set-colors` via socket (in-memory, no config change) | `kitty @ set-colors --reset` | `kitty +kitten themes` (writes config) |
-| fish | fzf preview pane only (ANSI swatches) | N/A | `fish_config theme choose` + universal var promotion |
-| neovim | N/A | N/A | Regex edit of Lua config file |
-| cursor | N/A | N/A | JSON edit of settings.json |
-
-## Adapter details
-
-### KDE Plasma
-
-Uses `plasma-apply-colorscheme` for everything. Changes are instant and affect all running KDE/Qt applications. No restart needed.
-
-Available schemes depend on what's installed in `/usr/share/color-schemes/` and `~/.local/share/color-schemes/`.
-
-### kitty
-
-Uses two separate mechanisms:
-
-- **Preview**: `kitty @ set-colors --all <file>` via the remote control socket. This changes terminal colors in-memory without touching any config file. `kitty @ set-colors --all --reset` reverts to whatever is in kitty.conf.
-- **Commit**: `kitty +kitten themes <name>` -- the native kitten theme manager. Downloads theme from the kitty theme repository, writes it to `current-theme.conf`, and updates `kitty.conf`.
-
-Live preview requires kitty remote control. Add to `kitty.conf`:
-
-```
-allow_remote_control socket-only
-listen_on unix:/tmp/kitty-{kitty_pid}.sock
-```
+v2 intentionally breaks the old CLI and config layout. See [docs/v2-migration.md](docs/v2-migration.md) for the new schema and the minimal manual migration steps from v1.
 
 The adapter auto-discovers the socket via `$KITTY_LISTEN_ON`, `$KITTY_PID`, or glob of `/tmp/kitty-*.sock`.
 
