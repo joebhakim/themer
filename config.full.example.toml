@@ -1,0 +1,179 @@
+# themer v2 full example config
+#
+# This file is intentionally broader than config.example.toml.
+# Use it for manual testing, migration experiments, or as a starting point
+# when you want more profiles and more adapter-specific knobs visible.
+#
+# Path expansion:
+# - `~` is expanded to the current user's home directory
+# - `$HOME` and other environment variables are expanded
+# - legacy `/home/you/...` paths are normalized to the active user's home
+
+version = 2
+enabled_adapters = ["kde", "kitty", "fish", "neovim", "cursor"]
+
+[ui]
+preview_on_move = true
+preview_debounce_ms = 80
+show_diagnostics = true
+
+[adapters.kitty]
+# Socket is optional. If you launch themer from inside kitty, the adapter can
+# use kitty's controlling terminal path without an explicit socket.
+# Uncomment this if you prefer a stable explicit target instead:
+# socket = "unix:${XDG_RUNTIME_DIR}/kitty-theme-preview.sock"
+known_themes = [
+  "Obsidian",
+  "Dracula",
+  "Nord",
+  "Catppuccin-Mocha",
+  "Catppuccin-Latte",
+  "Catppuccin-Frappe",
+  "Catppuccin-Macchiato",
+  "Gruvbox Dark",
+  "Gruvbox Light",
+  "Solarized Dark",
+  "Solarized Light",
+  "Tokyo Night",
+  "Tokyo Night Storm",
+  "One Half Dark",
+  "One Half Light",
+  "Rose Pine",
+  "Rose Pine Moon",
+  "Rose Pine Dawn",
+  "Alabaster",
+  "GitHub Dark",
+  "GitHub Light",
+  "Ayu Dark",
+  "Ayu Light",
+  "Kanagawa",
+  "Kanagawa Dragon",
+  "Tomorrow Night",
+  "Tomorrow",
+]
+
+[adapters.fish]
+themes_dir = "/usr/share/fish/themes"
+frozen_theme_path = "~/.config/fish/conf.d/fish_frozen_theme.fish"
+
+[adapters.neovim]
+config_path = "~/.config/nvim/lua/kickstart/plugins/theme.lua"
+colorscheme_pattern = "vim\\.cmd\\.colorscheme\\s+['\\\"]([^'\\\"]+)['\\\"]"
+known_themes = [
+  "tokyonight-night",
+  "tokyonight-day",
+  "tokyonight-moon",
+  "tokyonight-storm",
+  "catppuccin-mocha",
+  "catppuccin-latte",
+  "gruvbox",
+  "rose-pine",
+  "kanagawa",
+]
+
+[adapters.cursor]
+settings_path = "~/.config/Cursor/User/settings.json"
+known_themes = [
+  "Default Dark+",
+  "Default Dark Modern",
+  "Default Light Modern",
+  "Default Light+",
+  "Quiet Light",
+  "Default High Contrast",
+  "GitHub Dark Default",
+  "GitHub Light Default",
+  "Solarized Dark",
+  "Solarized Light",
+  "Tokyo Night",
+  "Tokyo Night Storm",
+  "Gruvbox Dark Medium",
+  "Gruvbox Light Medium",
+  "Catppuccin Mocha",
+  "Catppuccin Latte",
+]
+
+[profiles.nord.targets]
+kde = "BreezeDark"
+kitty = "Nord"
+fish = "nord"
+neovim = "tokyonight-storm"
+cursor = "Default Dark+"
+
+[profiles.light.targets]
+kde = "BreezeLight"
+kitty = "Alabaster"
+fish = "snow-day"
+neovim = "tokyonight-day"
+cursor = "Default Light Modern"
+
+[profiles.dracula.targets]
+kde = "BreezeDark"
+kitty = "Dracula"
+fish = "dracula"
+neovim = "tokyonight-night"
+cursor = "Default Dark Modern"
+
+[profiles.catppuccin-dark.targets]
+kde = "BreezeDark"
+kitty = "Catppuccin-Mocha"
+fish = "catppuccin-mocha"
+neovim = "catppuccin-mocha"
+cursor = "Catppuccin Mocha"
+
+[profiles.catppuccin-light.targets]
+kde = "BreezeLight"
+kitty = "Catppuccin-Latte"
+fish = "catppuccin-latte"
+neovim = "catppuccin-latte"
+cursor = "Catppuccin Latte"
+
+[profiles.gruvbox.targets]
+kde = "BreezeDark"
+kitty = "Gruvbox Dark"
+fish = "gruvbox"
+neovim = "gruvbox"
+cursor = "Gruvbox Dark Medium"
+
+[profiles.solarized-dark.targets]
+kde = "BreezeDark"
+kitty = "Solarized Dark"
+fish = "Solarized Dark"
+neovim = "tokyonight-night"
+cursor = "Solarized Dark"
+
+[profiles.solarized-light.targets]
+kde = "BreezeLight"
+kitty = "Solarized Light"
+fish = "Solarized Light"
+neovim = "tokyonight-day"
+cursor = "Solarized Light"
+
+[profiles.github-dark.targets]
+kde = "BreezeDark"
+kitty = "GitHub Dark"
+fish = "coolbeans"
+neovim = "tokyonight-night"
+cursor = "GitHub Dark Default"
+
+[profiles.github-light.targets]
+kde = "BreezeLight"
+kitty = "GitHub Light"
+fish = "fish default"
+neovim = "tokyonight-day"
+cursor = "GitHub Light Default"
+
+[profiles.kanagawa.targets]
+kde = "BreezeDark"
+kitty = "Kanagawa Dragon"
+fish = "ayu Mirage"
+neovim = "kanagawa"
+cursor = "Tokyo Night Storm"
+
+[profiles.partial-terminal-only.targets]
+kitty = "Tokyo Night"
+fish = "nord"
+neovim = "tokyonight-storm"
+
+[profiles.partial-editor-only.targets]
+neovim = "rose-pine"
+cursor = "Quiet Light"

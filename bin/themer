@@ -1,13 +1,12 @@
-#!/usr/bin/env python3
-"""themer -- centralized theme manager with live preview."""
+#!/usr/bin/env bash
+set -euo pipefail
 
-import sys
-from pathlib import Path
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cache_root="${XDG_CACHE_HOME:-$HOME/.cache}/themer"
+binary_path="$cache_root/themer-dev"
 
-# Add the repo root to sys.path so `import themer` works
-repo_root = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(repo_root.parent))
+mkdir -p "$cache_root"
+cd "$repo_root"
 
-from themer.main import main
-
-sys.exit(main() or 0)
+go build -o "$binary_path" ./cmd/themer
+exec "$binary_path" "$@"
