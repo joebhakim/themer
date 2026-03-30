@@ -96,11 +96,19 @@ func (f *Fish) Current(ctx context.Context) (string, error) {
 	return "", nil
 }
 
-func (f *Fish) Describe(context.Context, string) (core.ThemeDescription, error) {
+func (f *Fish) Describe(ctx context.Context, theme string) (core.ThemeDescription, error) {
 	description := core.ThemeDescription{
 		Summary: "Fish shell theme applied through fish_config.",
-		Notes:   []string{"Preview is disabled; apply writes shell theme state."},
+		Notes: []string{
+			"Live preview is disabled; apply writes shell theme state.",
+			"Preview sample below is rendered in an isolated fish process.",
+		},
 	}
+	sample, err := f.sampleThemePreview(ctx, theme)
+	if err != nil {
+		return description, err
+	}
+	description.Samples = sample
 	return description, nil
 }
 
@@ -196,4 +204,64 @@ func sameSignature(a, b map[string]string) bool {
 		}
 	}
 	return true
+}
+
+func (f *Fish) sampleThemePreview(ctx context.Context, theme string) ([]string, error) {
+	script := fmt.Sprintf(`
+fish_config theme choose %q
+or exit 1
+
+function __themer_cell -a varname label
+    set_color $$varname || set_color $fish_color_normal || set_color normal
+    printf "%%s" $label
+    set_color normal
+end
+
+echo "+---------------- fish sample ----------------+"
+printf "| "
+__themer_cell fish_color_command command
+printf "  "
+__themer_cell fish_color_keyword keyword
+printf "  "
+__themer_cell fish_color_param param
+printf "  "
+__themer_cell fish_color_quote quote
+printf " |\n"
+printf "| "
+__themer_cell fish_color_option option
+printf "  "
+__themer_cell fish_color_operator operator
+printf "  "
+__themer_cell fish_color_redirection redir
+printf "  "
+__themer_cell fish_color_end end
+printf " |\n"
+printf "| "
+__themer_cell fish_color_comment comment
+printf "  "
+__themer_cell fish_color_error error
+printf "  "
+__themer_cell fish_color_autosuggestion suggest
+printf " |\n"
+printf "| "
+__themer_cell fish_color_match match
+printf "  "
+__themer_cell fish_color_selection select
+printf "  "
+__themer_cell fish_color_search_match search
+printf " |\n"
+echo "+---------------------------------------------+"
+`, theme)
+	result, err := f.runner.Run(ctx, "fish", "-c", script)
+	if err != nil {
+		return nil, err
+	}
+	if result.ExitCode != 0 {
+		return nil, errors.New(strings.TrimSpace(result.Stderr))
+	}
+	output := strings.TrimRight(result.Stdout, "\n")
+	if output == "" {
+		return nil, nil
+	}
+	return strings.Split(output, "\n"), nil
 }

@@ -12,12 +12,15 @@ import (
 	"github.com/joebhakim/themer/internal/adapters"
 	"github.com/joebhakim/themer/internal/config"
 	"github.com/joebhakim/themer/internal/core"
+	"github.com/joebhakim/themer/internal/tracing"
 	"github.com/joebhakim/themer/internal/ui"
 	"github.com/spf13/cobra"
 )
 
 type app struct {
 	configPath string
+	trace      bool
+	traceFile  string
 }
 
 func Execute() error {
@@ -32,6 +35,8 @@ func Execute() error {
 		},
 	}
 	root.PersistentFlags().StringVar(&a.configPath, "config", "", "Path to themer.toml")
+	root.PersistentFlags().BoolVar(&a.trace, "trace", false, "Write a per-session timing trace")
+	root.PersistentFlags().StringVar(&a.traceFile, "trace-file", "", "Path to JSONL timing trace file (implies --trace)")
 	root.AddCommand(
 		a.newBrowseCommand(),
 		a.newApplyCommand(),
@@ -66,6 +71,8 @@ func (a *app) newApplyCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			defer manager.Close()
+			a.reportTrace(manager, false)
 			results, err := manager.ApplyProfile(context.Background(), args[0])
 			for _, result := range results {
 				if result.Skipped {
@@ -93,6 +100,8 @@ func (a *app) newCurrentCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			defer manager.Close()
+			a.reportTrace(manager, false)
 			results := manager.Current(context.Background())
 			if asJSON {
 				enc := json.NewEncoder(os.Stdout)
@@ -127,6 +136,8 @@ func (a *app) newCaptureCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			defer manager.Close()
+			a.reportTrace(manager, false)
 			targets, err := manager.CaptureCurrent(context.Background())
 			if err != nil {
 				return err
@@ -151,6 +162,8 @@ func (a *app) newDoctorCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			defer manager.Close()
+			a.reportTrace(manager, false)
 			diagnostics := manager.Diagnostics(context.Background())
 			for _, diagnostic := range diagnostics {
 				fmt.Printf("[%s] %s: %s\n", diagnostic.Level, diagnostic.Adapter, diagnostic.Message)
@@ -180,6 +193,7 @@ func (a *app) runBrowse() error {
 	if err != nil {
 		return err
 	}
+	defer manager.Close()
 	model := ui.NewBrowser(manager)
 	program := tea.NewProgram(model, tea.WithAltScreen())
 	_, err = program.Run()
@@ -191,11 +205,34 @@ func (a *app) buildManager() (*core.Manager, error) {
 	if err != nil {
 		return nil, err
 	}
-	manager, err := core.NewManager(cfg, adapters.Build(cfg))
+	recorder, err := a.buildTraceRecorder()
 	if err != nil {
 		return nil, err
 	}
+	runner := adapters.NewInstrumentedRunner(adapters.ExecRunner{}, recorder)
+	manager, err := core.NewManager(cfg, adapters.BuildWithRunner(cfg, runner))
+	if err != nil {
+		_ = recorder.Close()
+		return nil, err
+	}
+	manager.SetTraceRecorder(recorder)
 	return manager, nil
+}
+
+func (a *app) buildTraceRecorder() (tracing.Recorder, error) {
+	if !a.trace && strings.TrimSpace(a.traceFile) == "" {
+		return tracing.Disabled(), nil
+	}
+	return tracing.NewSession(strings.TrimSpace(a.traceFile))
+}
+
+func (a *app) reportTrace(manager *core.Manager, interactive bool) {
+	if interactive {
+		return
+	}
+	if path := manager.TracePath(); path != "" {
+		fmt.Fprintf(os.Stderr, "Trace: %s\n", path)
+	}
 }
 
 func (a *app) resolveConfigPath(cfg *config.Config) string {

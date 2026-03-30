@@ -6,7 +6,10 @@ import (
 )
 
 func Build(cfg *config.Config) []core.Adapter {
-	runner := ExecRunner{}
+	return BuildWithRunner(cfg, ExecRunner{})
+}
+
+func BuildWithRunner(cfg *config.Config, runner CommandRunner) []core.Adapter {
 	return []core.Adapter{
 		NewKDE(runner),
 		NewKitty(cfg.Adapters.Kitty, runner),

@@ -1,6 +1,9 @@
 package core
 
-import "context"
+import (
+	"context"
+	"time"
+)
 
 type PaletteEntry struct {
 	Label string
@@ -10,7 +13,21 @@ type PaletteEntry struct {
 type ThemeDescription struct {
 	Summary string
 	Palette []PaletteEntry
+	Samples []string
 	Notes   []string
+}
+
+type ActivityEntry struct {
+	Time    time.Time
+	Adapter string
+	Stage   string
+	Message string
+}
+
+type ActivityLogger func(ActivityEntry)
+
+type ActivityAwareAdapter interface {
+	SetActivityLogger(ActivityLogger)
 }
 
 type PreviewSupport struct {
