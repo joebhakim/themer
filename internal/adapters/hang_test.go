@@ -71,6 +71,7 @@ func TestKittyPreviewBlockedRunnerRespectsContextCancellation(t *testing.T) {
 	t.Setenv("KITTY_PID", "4930")
 	t.Setenv("KITTY_WINDOW_ID", "46")
 	t.Setenv("KITTY_LISTEN_ON", "")
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 
 	runner := &blockingRunner{
 		started: make(chan string, 1),
@@ -98,8 +99,8 @@ func TestKittyPreviewBlockedRunnerRespectsContextCancellation(t *testing.T) {
 	})
 
 	call := testutil.MustReceive(t, "kitty remote preview start", runner.started, 2*time.Second, debug)
-	if !strings.Contains(call, "kitty @ set-colors --all") {
-		t.Fatalf("blocked call = %q, want kitty remote set-colors", call)
+	if !strings.Contains(call, "kitty @ set-colors --match id:46") {
+		t.Fatalf("blocked call = %q, want kitty remote set-colors for current window", call)
 	}
 	testutil.MustStayBlocked(t, "kitty preview", done, 150*time.Millisecond, debug)
 

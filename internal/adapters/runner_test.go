@@ -3,9 +3,11 @@ package adapters
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/joebhakim/themer/internal/tracing"
 )
@@ -60,6 +62,16 @@ func TestInstrumentedRunnerWritesCommandTrace(t *testing.T) {
 	}
 	if end.Status != "ok" {
 		t.Fatalf("end status = %q, want ok", end.Status)
+	}
+}
+
+func TestExecRunnerReturnsContextDeadlineExceeded(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+
+	_, err := ExecRunner{}.Run(ctx, "sh", "-c", "sleep 1")
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("run error = %v, want context deadline exceeded", err)
 	}
 }
 

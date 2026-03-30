@@ -60,6 +60,9 @@ func (ExecRunner) Run(ctx context.Context, name string, args ...string) (Command
 	if err == nil {
 		return result, nil
 	}
+	if ctx != nil && ctx.Err() != nil {
+		return result, ctx.Err()
+	}
 	var exitErr *exec.ExitError
 	if errors.As(err, &exitErr) {
 		return result, nil

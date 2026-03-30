@@ -8,15 +8,35 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/joebhakim/themer/internal/config"
 	"github.com/joebhakim/themer/internal/core"
 )
 
+const kittyRemoteProbeTimeout = 250 * time.Millisecond
+
 type Kitty struct {
 	cfg              config.KittyConfig
 	runner           CommandRunner
 	currentThemePath string
+	configPath       string
+}
+
+type kittyRemoteEndpoint struct {
+	socket string
+	match  string
+	reason string
+}
+
+type kittySocketCandidate struct {
+	socket string
+	label  string
+}
+
+type kittyConfigHints struct {
+	allowRemoteControl string
+	listenOn           string
 }
 
 func NewKitty(cfg config.KittyConfig, runner CommandRunner) *Kitty {
@@ -24,6 +44,7 @@ func NewKitty(cfg config.KittyConfig, runner CommandRunner) *Kitty {
 		cfg:              cfg,
 		runner:           runner,
 		currentThemePath: filepath.Join(xdgConfigHome(), "kitty", "current-theme.conf"),
+		configPath:       filepath.Join(xdgConfigHome(), "kitty", "kitty.conf"),
 	}
 }
 
@@ -35,7 +56,7 @@ func (k *Kitty) DisplayName() string {
 	return "Kitty"
 }
 
-func (k *Kitty) Validate(context.Context) []core.Diagnostic {
+func (k *Kitty) Validate(ctx context.Context) []core.Diagnostic {
 	var diagnostics []core.Diagnostic
 	if _, err := exec.LookPath("kitty"); err != nil {
 		diagnostics = append(diagnostics, core.Diagnostic{
@@ -45,7 +66,7 @@ func (k *Kitty) Validate(context.Context) []core.Diagnostic {
 		})
 		return diagnostics
 	}
-	if support := k.PreviewStatus(context.Background()); !support.Enabled {
+	if support := k.PreviewStatus(ctx); !support.Enabled {
 		diagnostics = append(diagnostics, core.Diagnostic{
 			Adapter: k.Name(),
 			Level:   "warn",
@@ -108,54 +129,37 @@ func (k *Kitty) Describe(ctx context.Context, theme string) (core.ThemeDescripti
 	return description, nil
 }
 
-func (k *Kitty) PreviewStatus(context.Context) core.PreviewSupport {
+func (k *Kitty) PreviewStatus(ctx context.Context) core.PreviewSupport {
 	if _, err := exec.LookPath("kitty"); err != nil {
 		return core.PreviewSupport{Reason: "kitty not found"}
 	}
-	socket, ok := k.resolveSocket()
-	if !ok {
-		if kittySessionAvailable() {
-			return core.PreviewSupport{Enabled: true, Reason: "kitty terminal detected"}
-		}
-		return core.PreviewSupport{Reason: "run inside kitty or configure adapters.kitty.socket"}
-	}
-	if reason := validateKittySocket(socket); reason != "" {
+	endpoint, reason := k.previewEndpoint(ctx)
+	if reason != "" {
 		return core.PreviewSupport{Reason: reason}
 	}
-	return core.PreviewSupport{Enabled: true, Reason: "remote control socket available"}
+	return core.PreviewSupport{Enabled: true, Reason: endpoint.reason}
 }
 
 func (k *Kitty) Preview(ctx context.Context, theme string) (func(context.Context) error, error) {
-	socket, ok := k.resolveSocket()
-	if !ok {
-		if !kittySessionAvailable() {
-			return nil, fmt.Errorf("kitty preview requires either a kitty terminal session or adapters.kitty.socket")
-		}
-	}
-	if reason := validateKittySocket(socket); reason != "" {
+	endpoint, reason := k.previewEndpoint(ctx)
+	if reason != "" {
 		return nil, errors.New(reason)
+	}
+
+	originalColors, err := k.getColors(ctx, endpoint)
+	if err != nil {
+		return nil, err
 	}
 	dump, err := k.dumpTheme(ctx, theme)
 	if err != nil {
 		return nil, err
 	}
-	file, err := os.CreateTemp("", "themer-kitty-*.conf")
-	if err != nil {
+	if err := k.setColorsFromContent(ctx, endpoint, dump); err != nil {
 		return nil, err
 	}
-	defer os.Remove(file.Name())
-	if _, err := file.WriteString(dump); err != nil {
-		file.Close()
-		return nil, err
-	}
-	if err := file.Close(); err != nil {
-		return nil, err
-	}
-	if err := k.remote(ctx, socket, "set-colors", "--all", file.Name()); err != nil {
-		return nil, err
-	}
+
 	return func(ctx context.Context) error {
-		return k.remote(ctx, socket, "set-colors", "--all", "--reset")
+		return k.setColorsFromContent(ctx, endpoint, originalColors)
 	}, nil
 }
 
@@ -165,7 +169,7 @@ func (k *Kitty) Apply(ctx context.Context, theme string) error {
 		return err
 	}
 	if result.ExitCode != 0 {
-		return errors.New(strings.TrimSpace(result.Stderr))
+		return commandResultError(result)
 	}
 	return nil
 }
@@ -176,52 +180,276 @@ func (k *Kitty) dumpTheme(ctx context.Context, theme string) (string, error) {
 		return "", err
 	}
 	if result.ExitCode != 0 {
-		return "", errors.New(strings.TrimSpace(result.Stderr))
+		return "", commandResultError(result)
 	}
 	return result.Stdout, nil
 }
 
-func (k *Kitty) remote(ctx context.Context, socket string, args ...string) error {
-	base := []string{"@"}
-	if socket != "" {
-		base = append(base, "--to", socket)
+func (k *Kitty) previewEndpoint(ctx context.Context) (kittyRemoteEndpoint, string) {
+	hints := k.readConfigHints()
+	match := currentKittyWindowMatch()
+	var failures []string
+
+	for _, candidate := range k.remoteSocketCandidates(hints) {
+		if reason := validateKittySocket(candidate.socket); reason != "" {
+			failures = append(failures, reason)
+			continue
+		}
+		endpoint := kittyRemoteEndpoint{
+			socket: candidate.socket,
+			match:  match,
+			reason: candidate.label,
+		}
+		if err := k.probeRemote(ctx, endpoint); err == nil {
+			return endpoint, ""
+		} else {
+			failures = append(failures, fmt.Sprintf("%s probe failed: %s", candidate.label, err.Error()))
+		}
 	}
-	base = append(base, args...)
-	result, err := k.runner.Run(ctx, "kitty", base...)
+
+	if strings.EqualFold(hints.allowRemoteControl, "socket-only") {
+		return kittyRemoteEndpoint{}, kittyPreviewUnavailableReason(hints, failures)
+	}
+
+	if kittySessionAvailable() {
+		endpoint := kittyRemoteEndpoint{
+			match:  match,
+			reason: "kitty remote control available in the current window",
+		}
+		if err := k.probeRemote(ctx, endpoint); err == nil {
+			return endpoint, ""
+		} else {
+			failures = append(failures, "kitty tty remote control probe failed: "+err.Error())
+		}
+	}
+
+	return kittyRemoteEndpoint{}, kittyPreviewUnavailableReason(hints, failures)
+}
+
+func (k *Kitty) probeRemote(ctx context.Context, endpoint kittyRemoteEndpoint) error {
+	probeCtx, cancel := withKittyTimeout(ctx, kittyRemoteProbeTimeout)
+	defer cancel()
+	_, err := k.getColors(probeCtx, endpoint)
+	return err
+}
+
+func (k *Kitty) getColors(ctx context.Context, endpoint kittyRemoteEndpoint) (string, error) {
+	result, err := k.remote(ctx, endpoint, "get-colors")
+	if err != nil {
+		return "", err
+	}
+	if result.ExitCode != 0 {
+		return "", commandResultError(result)
+	}
+	return result.Stdout, nil
+}
+
+func (k *Kitty) setColorsFromContent(ctx context.Context, endpoint kittyRemoteEndpoint, content string) error {
+	file, err := os.CreateTemp("", "themer-kitty-*.conf")
+	if err != nil {
+		return err
+	}
+	path := file.Name()
+	defer os.Remove(path)
+	if _, err := file.WriteString(content); err != nil {
+		file.Close()
+		return err
+	}
+	if err := file.Close(); err != nil {
+		return err
+	}
+	result, err := k.remote(ctx, endpoint, "set-colors", path)
 	if err != nil {
 		return err
 	}
 	if result.ExitCode != 0 {
-		return errors.New(strings.TrimSpace(result.Stderr))
+		return commandResultError(result)
 	}
 	return nil
 }
 
-func (k *Kitty) resolveSocket() (string, bool) {
-	if socket := strings.TrimSpace(k.cfg.Socket); socket != "" {
-		return socket, true
+func (k *Kitty) remote(ctx context.Context, endpoint kittyRemoteEndpoint, command string, args ...string) (CommandResult, error) {
+	base := []string{"@"}
+	if endpoint.socket != "" {
+		base = append(base, "--to", endpoint.socket)
 	}
-	if socket := strings.TrimSpace(os.Getenv("KITTY_LISTEN_ON")); socket != "" {
-		return socket, true
+	base = append(base, command)
+	if endpoint.match != "" {
+		base = append(base, "--match", endpoint.match)
 	}
-	return "", false
+	base = append(base, args...)
+	return k.runner.Run(ctx, "kitty", base...)
+}
+
+func (k *Kitty) remoteSocketCandidates(hints kittyConfigHints) []kittySocketCandidate {
+	var candidates []kittySocketCandidate
+	seen := map[string]struct{}{}
+	add := func(socket, label string) {
+		socket = normalizeKittySocket(socket)
+		if socket == "" || socket == "none" {
+			return
+		}
+		if _, ok := seen[socket]; ok {
+			return
+		}
+		seen[socket] = struct{}{}
+		candidates = append(candidates, kittySocketCandidate{
+			socket: socket,
+			label:  label,
+		})
+	}
+
+	add(k.cfg.Socket, "configured kitty socket")
+	add(os.Getenv("KITTY_LISTEN_ON"), "KITTY_LISTEN_ON socket")
+	add(hints.listenOn, "kitty.conf listen_on socket")
+	return candidates
+}
+
+func (k *Kitty) readConfigHints() kittyConfigHints {
+	data, err := os.ReadFile(k.configPath)
+	if err != nil {
+		return kittyConfigHints{}
+	}
+
+	hints := kittyConfigHints{}
+	for _, rawLine := range strings.Split(string(data), "\n") {
+		line := strings.TrimSpace(stripKittyConfigComment(rawLine))
+		if line == "" {
+			continue
+		}
+		key, value, ok := kittyConfigDirective(line)
+		if !ok {
+			continue
+		}
+		switch key {
+		case "allow_remote_control":
+			hints.allowRemoteControl = strings.TrimSpace(value)
+		case "listen_on":
+			hints.listenOn = normalizeKittySocket(value)
+		}
+	}
+	return hints
+}
+
+func currentKittyWindowMatch() string {
+	if windowID := strings.TrimSpace(os.Getenv("KITTY_WINDOW_ID")); windowID != "" {
+		return "id:" + windowID
+	}
+	return ""
 }
 
 func kittySessionAvailable() bool {
-	if strings.TrimSpace(os.Getenv("KITTY_LISTEN_ON")) != "" {
-		return true
-	}
 	return strings.TrimSpace(os.Getenv("KITTY_PID")) != "" || strings.TrimSpace(os.Getenv("KITTY_WINDOW_ID")) != ""
 }
 
+func kittyPreviewUnavailableReason(hints kittyConfigHints, failures []string) string {
+	if strings.EqualFold(hints.allowRemoteControl, "socket-only") {
+		if hints.listenOn != "" {
+			return fmt.Sprintf("kitty is configured for socket-only remote control but no live socket was found at %s; restart kitty or export KITTY_LISTEN_ON", displayKittySocket(hints.listenOn))
+		}
+		return "kitty is configured for socket-only remote control but no live socket is available"
+	}
+	if len(failures) > 0 {
+		return failures[0]
+	}
+	if !kittySessionAvailable() {
+		return "run inside kitty or configure adapters.kitty.socket"
+	}
+	return "kitty remote control is unavailable"
+}
+
 func validateKittySocket(socket string) string {
-	if strings.HasPrefix(socket, "unix:") {
+	switch {
+	case socket == "":
+		return ""
+	case strings.HasPrefix(socket, "fd:"):
+		return "kitty fd remote-control transports are not supported by themer"
+	case strings.HasPrefix(socket, "unix:"):
 		path := strings.TrimPrefix(socket, "unix:")
 		if _, err := os.Stat(path); err != nil {
 			return fmt.Sprintf("kitty socket %s is unavailable", path)
 		}
+		return ""
+	default:
+		return ""
 	}
-	return ""
+}
+
+func normalizeKittySocket(socket string) string {
+	socket = strings.TrimSpace(socket)
+	if socket == "" {
+		return ""
+	}
+	if strings.HasPrefix(socket, "unix:") {
+		path := strings.TrimPrefix(socket, "unix:")
+		path = strings.ReplaceAll(path, "{kitty_pid}", strings.TrimSpace(os.Getenv("KITTY_PID")))
+		path = expandHomePath(path)
+		return "unix:" + path
+	}
+	return socket
+}
+
+func displayKittySocket(socket string) string {
+	if strings.HasPrefix(socket, "unix:") {
+		return strings.TrimPrefix(socket, "unix:")
+	}
+	return socket
+}
+
+func stripKittyConfigComment(line string) string {
+	if idx := strings.Index(line, "#"); idx >= 0 {
+		return line[:idx]
+	}
+	return line
+}
+
+func kittyConfigDirective(line string) (string, string, bool) {
+	line = strings.TrimSpace(line)
+	if line == "" {
+		return "", "", false
+	}
+	parts := strings.Fields(line)
+	if len(parts) < 2 {
+		return "", "", false
+	}
+	key := parts[0]
+	value := strings.TrimSpace(line[len(key):])
+	return key, value, true
+}
+
+func expandHomePath(path string) string {
+	if path == "" || path[0] != '~' {
+		return path
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return path
+	}
+	if path == "~" {
+		return home
+	}
+	if strings.HasPrefix(path, "~/") {
+		return filepath.Join(home, path[2:])
+	}
+	return path
+}
+
+func withKittyTimeout(ctx context.Context, timeout time.Duration) (context.Context, context.CancelFunc) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if timeout <= 0 {
+		return ctx, func() {}
+	}
+	return context.WithTimeout(ctx, timeout)
+}
+
+func commandResultError(result CommandResult) error {
+	message := strings.TrimSpace(result.Stderr)
+	if message == "" {
+		message = "unknown error"
+	}
+	return errors.New(message)
 }
 
 func parseKittyColors(content string) map[string]string {
