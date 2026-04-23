@@ -11,7 +11,12 @@ import (
 	toml "github.com/pelletier/go-toml/v2"
 )
 
-const CurrentVersion = 2
+const (
+	CurrentVersion = 2
+
+	FishApplyModeSessionRefresh = "session_refresh"
+	FishApplyModeUniversal      = "universal"
+)
 
 var knownAdapters = map[string]struct{}{
 	"kde":    {},
@@ -34,7 +39,9 @@ type KittyConfig struct {
 
 type FishConfig struct {
 	ThemesDir       string `toml:"themes_dir"`
-	FrozenThemePath string `toml:"frozen_theme_path"`
+	ApplyMode       string `toml:"apply_mode"`
+	RefreshPath     string `toml:"refresh_path"`
+	FrozenThemePath string `toml:"frozen_theme_path,omitempty"`
 }
 
 type NeovimConfig struct {
@@ -130,6 +137,17 @@ func (c *Config) Validate() error {
 	if len(c.Profiles) == 0 {
 		return errors.New("profiles must define at least one profile")
 	}
+	if c.Adapters.Fish.ApplyMode == "" {
+		c.Adapters.Fish.ApplyMode = FishApplyModeSessionRefresh
+	}
+	switch c.Adapters.Fish.ApplyMode {
+	case FishApplyModeSessionRefresh, FishApplyModeUniversal:
+	default:
+		return fmt.Errorf("adapters.fish.apply_mode must be %q or %q", FishApplyModeSessionRefresh, FishApplyModeUniversal)
+	}
+	if strings.TrimSpace(c.Adapters.Fish.RefreshPath) == "" {
+		c.Adapters.Fish.RefreshPath = filepath.Join(DefaultStateDir(), "fish", "theme.fish")
+	}
 	for profileName, profile := range c.Profiles {
 		if len(profile.Targets) == 0 {
 			return fmt.Errorf("profile %q must define at least one target", profileName)
@@ -202,8 +220,9 @@ func defaultConfig() *Config {
 		},
 		Adapters: AdaptersConfig{
 			Fish: FishConfig{
-				ThemesDir:       "/usr/share/fish/themes",
-				FrozenThemePath: filepath.Join(configHome(), "fish", "conf.d", "fish_frozen_theme.fish"),
+				ThemesDir:   "/usr/share/fish/themes",
+				ApplyMode:   FishApplyModeSessionRefresh,
+				RefreshPath: filepath.Join(DefaultStateDir(), "fish", "theme.fish"),
 			},
 			Neovim: NeovimConfig{
 				ConfigPath:         filepath.Join(configHome(), "nvim", "lua", "kickstart", "plugins", "theme.lua"),
@@ -263,6 +282,7 @@ func defaultConfig() *Config {
 
 func (c *Config) normalizePaths() {
 	c.Adapters.Fish.ThemesDir = expandPath(c.Adapters.Fish.ThemesDir)
+	c.Adapters.Fish.RefreshPath = expandPath(c.Adapters.Fish.RefreshPath)
 	c.Adapters.Fish.FrozenThemePath = expandPath(c.Adapters.Fish.FrozenThemePath)
 	c.Adapters.Neovim.ConfigPath = expandPath(c.Adapters.Neovim.ConfigPath)
 	c.Adapters.Cursor.SettingsPath = expandPath(c.Adapters.Cursor.SettingsPath)

@@ -43,6 +43,7 @@ func Execute() error {
 		a.newCurrentCommand(),
 		a.newCaptureCommand(),
 		a.newDoctorCommand(),
+		a.newFishRefreshCommand(),
 	)
 	if err := root.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, formatError(err))
@@ -183,6 +184,25 @@ func (a *app) newDoctorCommand() *cobra.Command {
 				}
 				fmt.Println()
 			}
+			return nil
+		},
+	}
+}
+
+func (a *app) newFishRefreshCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:   "fish-refresh",
+		Short: "Emit fish commands to refresh the current shell session",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg, err := config.Load(a.resolveConfigPath(nil))
+			if err != nil {
+				return err
+			}
+			script, err := adapters.NewFish(cfg.Adapters.Fish, adapters.ExecRunner{}).RefreshScript()
+			if err != nil {
+				return err
+			}
+			fmt.Print(script)
 			return nil
 		},
 	}

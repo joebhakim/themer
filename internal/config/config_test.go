@@ -99,6 +99,8 @@ socket = "unix:~/.cache/kitty.sock"
 
 [adapters.fish]
 themes_dir = "/usr/share/fish/themes"
+apply_mode = "universal"
+refresh_path = "$HOME/.local/state/themer/fish/theme.fish"
 frozen_theme_path = "/home/you/.config/fish/conf.d/fish_frozen_theme.fish"
 
 [adapters.neovim]
@@ -124,6 +126,12 @@ kitty = "Nord"
 	}
 	if loaded.Adapters.Fish.FrozenThemePath != filepath.Join(home, ".config", "fish", "conf.d", "fish_frozen_theme.fish") {
 		t.Fatalf("unexpected fish path: %q", loaded.Adapters.Fish.FrozenThemePath)
+	}
+	if loaded.Adapters.Fish.ApplyMode != FishApplyModeUniversal {
+		t.Fatalf("unexpected fish apply mode: %q", loaded.Adapters.Fish.ApplyMode)
+	}
+	if loaded.Adapters.Fish.RefreshPath != filepath.Join(home, ".local", "state", "themer", "fish", "theme.fish") {
+		t.Fatalf("unexpected fish refresh path: %q", loaded.Adapters.Fish.RefreshPath)
 	}
 	if loaded.Adapters.Neovim.ConfigPath != filepath.Join(home, ".config", "nvim", "lua", "theme.lua") {
 		t.Fatalf("unexpected neovim path: %q", loaded.Adapters.Neovim.ConfigPath)
