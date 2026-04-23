@@ -108,6 +108,14 @@ Use `config.full.example.toml` or a local config that targets your real environm
    - either `Plasma now reports <theme>` or a propagation warning
 4. If Plasma appears slow, verify the app stays responsive and the log keeps the last known stage visible.
 
+### Fish apply modes
+
+1. Leave `adapters.fish.apply_mode = "session_refresh"` and apply a profile that changes the fish theme.
+2. Confirm themer writes the refresh script to `adapters.fish.refresh_path`.
+3. In a live fish shell, run `themer fish-refresh | source` and confirm syntax colors update in-place.
+4. Switch to `adapters.fish.apply_mode = "universal"`, apply again, run `themer fish-refresh | source` in the live shell once if needed, and confirm `fish -c 'set -q themer_current_theme; echo $themer_current_theme'` reports the selected theme.
+5. Confirm `~/.config/fish/conf.d/fish_frozen_theme.fish` is no longer created by themer.
+
 ### Broken-path sanity checks
 
 1. Use a profile with a missing fish theme or missing Neovim config file.

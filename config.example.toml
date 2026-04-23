@@ -33,7 +33,8 @@ known_themes = [
 
 [adapters.fish]
 themes_dir = "/usr/share/fish/themes"
-frozen_theme_path = "~/.config/fish/conf.d/fish_frozen_theme.fish"
+apply_mode = "session_refresh"
+refresh_path = "~/.local/state/themer/fish/theme.fish"
 
 [adapters.neovim]
 config_path = "~/.config/nvim/lua/kickstart/plugins/theme.lua"

@@ -47,6 +47,7 @@ themer current          # show current themes
 themer current --json   # machine-readable current state
 themer capture desktop  # snapshot current state into a profile
 themer doctor           # validate adapter readiness and preview support
+themer fish-refresh | source  # refresh the current fish shell in session_refresh mode
 ```
 
 ## Config
@@ -56,6 +57,7 @@ The config path is `~/.config/themer/themer.toml`.
 - `config.example.toml` is the small starter config.
 - `config.full.example.toml` is a larger test-oriented example with more profiles, more known themes, and comments around path expansion.
 - `adapters.kitty.socket` is optional. When omitted, themer will try to use the current kitty terminal session.
+- `adapters.fish.apply_mode` controls whether fish themes use explicit per-session refresh (`session_refresh`) or fish universal variables (`universal`).
 
 ```toml
 version = 2
@@ -64,6 +66,10 @@ enabled_adapters = ["kde", "kitty", "fish", "neovim", "cursor"]
 [ui]
 preview_on_move = true
 preview_debounce_ms = 120
+
+[adapters.fish]
+apply_mode = "session_refresh"
+refresh_path = "~/.local/state/themer/fish/theme.fish"
 
 [profiles.nord.targets]
 kde = "BreezeDark"
@@ -101,9 +107,14 @@ The adapter auto-discovers the socket via `$KITTY_LISTEN_ON`, `$KITTY_PID`, or g
 
 ### fish
 
-Uses `fish_config theme choose` which sets global (session) variables, then promotes them to universal variables for persistence. Also rewrites the frozen theme file (`~/.config/fish/conf.d/fish_frozen_theme.fish`) so new shells start with the correct colors.
+Fish supports two apply modes:
 
-The 25+ built-in themes live in `/usr/share/fish/themes/`. Theme detection works by reading a `themer_current_theme` universal variable marker, with fallback to color-matching against known theme files.
+- `session_refresh` (default): `themer apply ...` writes a refresh script at `adapters.fish.refresh_path`. Refresh a live fish shell explicitly with `themer fish-refresh | source`. This mode does not write startup globals.
+- `universal`: persists theme variables via fish universal variables. If a shell previously sourced a session-refresh script, run `themer fish-refresh | source` once to clear those session-local overrides.
+
+`themer` no longer writes `~/.config/fish/conf.d/fish_frozen_theme.fish`. If that legacy file still exists, `themer doctor` warns about it and successful applies remove the default legacy file.
+
+The 25+ built-in themes live in `/usr/share/fish/themes/`. Theme detection prefers a `themer_current_theme` marker or the refresh script theme header, with fallback to color-matching against known theme files.
 
 ### Neovim
 

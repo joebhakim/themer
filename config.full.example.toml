@@ -54,7 +54,12 @@ known_themes = [
 
 [adapters.fish]
 themes_dir = "/usr/share/fish/themes"
-frozen_theme_path = "~/.config/fish/conf.d/fish_frozen_theme.fish"
+# Default: write a refresh script you can source in a live fish shell:
+#   themer fish-refresh | source
+# Switch to "universal" if you want fish theme vars persisted via fish
+# universal variables instead.
+apply_mode = "universal"
+refresh_path = "~/.local/state/themer/fish/theme.fish"
 
 [adapters.neovim]
 config_path = "~/.config/nvim/lua/kickstart/plugins/theme.lua"

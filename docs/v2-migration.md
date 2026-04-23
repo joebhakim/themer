@@ -35,6 +35,7 @@ cursor = "Default Dark+"
 - `themer apply <profile>` still applies a profile.
 - `themer current` still reports current themes.
 - `themer save <name>` is replaced by `themer capture <name>`.
+- `themer fish-refresh | source` refreshes a live fish shell when using `adapters.fish.apply_mode = "session_refresh"`.
 - Per-adapter interactive pickers from v1 are gone.
 - Internal preview helper commands from the `fzf` implementation are gone.
 
@@ -42,5 +43,6 @@ cursor = "Default Dark+"
 
 - Preview is only enabled where the adapter can justify it.
 - Cursor settings are parsed as JSONC.
+- Fish no longer writes startup globals in `conf.d`; choose between explicit session refresh and universal-variable persistence.
 - Neovim writes fail if the configured pattern matches zero or multiple lines.
 - Kitty preview requires an explicit socket via config or `KITTY_LISTEN_ON`.
